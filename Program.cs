@@ -25,7 +25,7 @@ namespace LIKE5BOT
 
         private static string _cacheDirectory;
 
-        private static readonly Dictionary<int, DateTime> ClearedDatas = new Dictionary<int, DateTime>();
+        //private static readonly Dictionary<int, DateTime> ClearedDatas = new Dictionary<int, DateTime>();
 
         private static Dictionary<string, int[,]> _indexes;
 
@@ -35,19 +35,16 @@ namespace LIKE5BOT
         {
             Thread.CurrentThread.CurrentCulture = new CultureInfo("en-US");
             Thread.CurrentThread.CurrentUICulture = new CultureInfo("en-US");
-            Bot = new Bot(INSERT_YOUR_TOKEN_HERE)
+            Bot = new Bot(new BotSettings(INSERT_YOUR_TOKEN_HERE)
             {
-                Settings =
-                {
-                    InfoToConsole = true,
-                    ExceptionsToConsole = true,
-                    RequestsToConsole = true,
-                    ResponsesToConsole = true,
-                    Name = "LIKE5BOT",
-                    GetProfile = true
-                }
-            };
-            _cacheDirectory = Environment.CurrentDirectory + "\\WallCache\\";
+                InfoToConsole = true,
+                ExceptionsToConsole = true,
+                RequestsToConsole = true,
+                ResponsesToConsole = true,
+                Name = "LIKE5BOT",
+                GetProfile = true
+            });
+            _cacheDirectory = Environment.CurrentDirectory + Path.DirectorySeparatorChar + "WallCache" + Path.DirectorySeparatorChar;
             if (!Directory.Exists(_cacheDirectory))
             {
                 Directory.CreateDirectory(_cacheDirectory);
@@ -66,13 +63,16 @@ namespace LIKE5BOT
             Bot.OnParseMessage += (sender, eventArgs) =>
             {
                 // Checking for message text is null
-                if (eventArgs.Message.Text == null) return;
+                if (eventArgs.Message.Text == null || eventArgs.Message.Chat.Id == "-31756060") return;
 
                 // Checking for texts
                 switch (eventArgs.Message.Text.ToLower())
                 {
+                    case "/stop":
+                    case "nothing":
+                    case "all":
                     case "✌️ ok, it's all":
-                        Bot.Methods.SendMessage(eventArgs.Message.Chat, "😉", new ReplyKeyboardHide());
+                        Bot.Methods.SendMessage(eventArgs.Message.Chat, "😉", false, new ReplyKeyboardHide());
                         return;
                     case "🔠 menu":
                         buttonsCommand.Executed(eventArgs.Message);
@@ -155,14 +155,14 @@ namespace LIKE5BOT
             SendPreviewWall(chat, (new Random()).Next(randrange[0], randrange[1]), category);
         }
 
-        public static void SendFullWall(Chat chat, int id, string category)
+        public static void SendFullWall(Message message, int id, string category)
         {
             var uploadDone = false;
             Task.Factory.StartNew(() =>
             {
                 while (!uploadDone)
                 {
-                    Bot.Methods.SendChatAction(chat, "upload_document");
+                    Bot.Methods.SendChatAction(message.Chat, "upload_document");
                     Thread.Sleep(4999);
                 }
             });
@@ -186,10 +186,10 @@ namespace LIKE5BOT
                         switch (errorResponse.StatusCode)
                         {
                             case HttpStatusCode.NotFound:
-                                Bot.Methods.SendMessage(chat, "⚠️ This wallpaper not found.");
+                                Bot.Methods.ReplyToMessage(message, "⚠️ This wallpaper not found.");
                                 break;
                             default:
-                                Bot.Methods.SendMessage(chat, "⚠️ Error, when download image. Try again in 5 seconds:\n"
+                                Bot.Methods.ReplyToMessage(message, "⚠️ Error, when download image. Try again in 5 seconds:\n"
                                                               + "/fullsize" + readyId);
                                 break;
                         }
@@ -200,7 +200,7 @@ namespace LIKE5BOT
                 var fileInfo = new FileInfo(filename);
                 if (IsFileLocked(fileInfo))
                 {
-                    Bot.Methods.SendMessage(chat, "Please wait...");
+                    Bot.Methods.SendMessage(message.Chat, "Please wait...");
                     while (IsFileLocked(fileInfo)) { }
                 }
                 var markup = new ReplyKeyboardMarkup()
@@ -213,17 +213,18 @@ namespace LIKE5BOT
                     ResizeKeyboard = true,
                     OneTimeKeyboard = true
                 };
-                var message = Bot.Methods.SendDocumentFile(chat, filename, markup);
+                var msg = Bot.Methods.ReplyToMessageWithDocumentFile(message, new FileInfo(filename), markup);
                 uploadDone = true;
-                if (message != null)
+                if (msg != null)
                 {
-                    Bot.Methods.SendMessage(chat, "💡 If you like this wallpapers visit LIKE5:\nhttp://www.like5.com 😉",
+                    Bot.Methods.SendMessage(message.Chat, "💡 If you like this wallpapers visit LIKE5:\nhttp://www.like5.com 😉",
                         true);
                 }
                 else
                 {
-                    Bot.Methods.SendMessage(chat, "We are sorry, but something went wrong.");
+                    Bot.Methods.SendMessage(message.Chat, "We are sorry, but something went wrong.");
                 }
+                GC.Collect();
             });
         }
 
@@ -232,7 +233,7 @@ namespace LIKE5BOT
             Bot.Methods.SendChatAction(chat, "upload_photo");
             Task.Factory.StartNew(delegate
             {
-                var filename = Environment.CurrentDirectory + "\\WallCache\\s_" + id + ".jpg";
+                var filename = _cacheDirectory + "s_" + id + ".jpg";
                 var readyId = '_' + category.ToLower() + '_' +
                               Path.GetFileName(filename).Replace(".jpg", "").Replace("s_", "");
                 if (!File.Exists(filename))
@@ -264,7 +265,10 @@ namespace LIKE5BOT
                 if (IsFileLocked(fileInfo))
                 {
                     Bot.Methods.SendMessage(chat, "Please wait...");
-                    while (IsFileLocked(fileInfo)) { }
+                    while (IsFileLocked(fileInfo))
+                    {
+                        Thread.Sleep(1000);
+                    }
                 }
                 // + "\n/wallpaper_" + category.ToLower() + " - next wallpaper from this category",
                 var markup = new ReplyKeyboardMarkup()
@@ -276,9 +280,11 @@ namespace LIKE5BOT
                         new[] { "🔠 Menu", "✌️ Ok, it's all" }
                     },
                     ResizeKeyboard = true,
-                    OneTimeKeyboard = true
+                    OneTimeKeyboard = false
                 };
-                Bot.Methods.SendPhotoFile(chat, filename, markup, $"/fullsize{readyId}");
+                Bot.Methods.SendPhotoFile(chat, filename, $"/fullsize{readyId}", markup);
+                
+                GC.Collect();
             });
         }
 
@@ -304,7 +310,7 @@ namespace LIKE5BOT
                     int id;
                     if (int.TryParse(text, out id))
                     {
-                        SendFullWall(chat, id, category);
+                        SendFullWall(message, id, category);
                     }
                 }
                 else if (text.IndexOf("preview_", StringComparison.Ordinal) == 0)
@@ -503,7 +509,7 @@ namespace LIKE5BOT
                                                       "🎉 /wallpaper_holiday\n" +
                                                       "👀 /wallpaper_beauty\n\n" +
                                                       "If you want to get list of wallpapers (no random), visit:\n" +
-                                                      "🌎 http://www.like5.com/?tgbot", markup);
+                                                      "🌎 http://www.like5.com/?tgbot", false, markup);
             }
         }
     }
